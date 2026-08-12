@@ -216,3 +216,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# gpt-from-scratch: local/HPC training artifacts, not tracked
+checkpoints/*.pt
+outputs/*.txt
+logs/*.out
+logs/*.err
+!checkpoints/.gitkeep
+!outputs/.gitkeep
+!logs/.gitkeep
