@@ -34,7 +34,9 @@ mkdir -p logs checkpoints outputs
 
 VENV_DIR="/mnt/scratch2/users/$USER/venvs/gpt-from-scratch"
 
-module load python3/3.10.5/gcc-9.3.0
+# `module` is not available in this cluster's batch shell; the venv above was
+# created directly against /opt/apps/python3/3.10.5/gcc-9.3.0/bin/python3, so
+# activating it is sufficient on its own.
 source "$VENV_DIR/bin/activate"
 
 echo "Job ID:  $SLURM_JOB_ID"

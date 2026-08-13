@@ -58,7 +58,10 @@ or waste GPU time.
 ssh kelvin2
 cd /mnt/scratch2/users/$USER
 git clone https://github.com/cotenthusiast/gpt-from-scratch repos/gpt-from-scratch
-python3 -m venv venvs/gpt-from-scratch
+
+# The login node's bare `python3` is 3.6 and `module` isn't available over
+# plain SSH; use the 3.10 interpreter directly so the venv is unambiguous.
+/opt/apps/python3/3.10.5/gcc-9.3.0/bin/python3 -m venv venvs/gpt-from-scratch
 source venvs/gpt-from-scratch/bin/activate
 pip install -r repos/gpt-from-scratch/requirements.txt
 
