@@ -11,9 +11,10 @@ modules, plus a training pipeline for a Kelvin2 A100.
 ## Structure
 
 - `model.py` — the Transformer: attention head, multi-head attention,
-  feed-forward network, pre-LN block, `GPTLanguageModel`
+  feed-forward network, pre-LN block, `BigramLanguageModel`
 - `data.py` — character-level tokenizer and batching
-- `config.py` — hyperparameter presets (`tutorial`, `a100`)
+- `config.py` — hyperparameters (Karpathy's tutorial settings)
+- `config_a100.py` — larger hyperparameters for a single Kelvin2 A100
 - `train.py` — training loop, periodic train/val loss estimation, checkpoint saving
 - `generate.py` — loads a checkpoint and generates text
 - `input.txt` — Tiny Shakespeare
@@ -27,7 +28,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 # Small/local config (Karpathy's original tutorial hyperparameters)
-python train.py --preset tutorial
+python train.py
 
 # Generate from a trained checkpoint
 python generate.py --checkpoint checkpoints/shakespeare_gpt.pt --tokens 10000
@@ -35,7 +36,7 @@ python generate.py --checkpoint checkpoints/shakespeare_gpt.pt --tokens 10000
 
 ## Configs
 
-| | `tutorial` | `a100` |
+| | `config.py` | `config_a100.py` |
 |---|---|---|
 | batch_size | 64 | 96 |
 | block_size | 256 | 512 |
@@ -46,11 +47,12 @@ python generate.py --checkpoint checkpoints/shakespeare_gpt.pt --tokens 10000
 | learning_rate | 3e-4 | 3e-4 |
 | max_iters | 5000 | 6000 |
 
-`tutorial` reproduces Karpathy's final tutorial settings and is the sane
-default for a laptop/CPU run. `a100` is a deliberately modest step up in
-context and capacity for a single Kelvin2 A100 — Tiny Shakespeare is only
-~1.1M characters, so this stops well short of a size that would just overfit
-or waste GPU time.
+`config.py` reproduces Karpathy's final tutorial settings and is the sane
+default for a laptop/CPU run (`python train.py`). `config_a100.py` (used via
+`python train.py --a100`) is a deliberately modest step up in context and
+capacity for a single Kelvin2 A100 — Tiny Shakespeare is only ~1.1M
+characters, so this stops well short of a size that would just overfit or
+waste GPU time.
 
 ## Kelvin2
 

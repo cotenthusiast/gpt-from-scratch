@@ -53,11 +53,11 @@ assert torch.cuda.is_available(), 'CUDA not available on this node'
 print('CUDA OK:', torch.cuda.get_device_name(0))
 "
 
-python -u train.py --preset a100 --checkpoint checkpoints/shakespeare_gpt.pt
+python -u train.py --a100 --checkpoint checkpoints/shakespeare_gpt.pt
 
 python -u generate.py \
     --checkpoint checkpoints/shakespeare_gpt.pt \
     --tokens 10000 \
-    --output outputs/generated.txt
+    > outputs/generated.txt
 
 echo "Job complete."

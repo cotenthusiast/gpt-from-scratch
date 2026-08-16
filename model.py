@@ -1,19 +1,16 @@
-"""GPT language model: multi-head causal self-attention Transformer."""
-
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
 
+# Single attention head
 class Head(nn.Module):
-    """One head of causal self-attention."""
-
     def __init__(self, n_embed, head_size, block_size, dropout):
         super().__init__()
         self.key = nn.Linear(n_embed, head_size, bias=False)
         self.query = nn.Linear(n_embed, head_size, bias=False)
         self.value = nn.Linear(n_embed, head_size, bias=False)
-        self.register_buffer("tril", torch.tril(torch.ones(block_size, block_size)))
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
@@ -21,8 +18,8 @@ class Head(nn.Module):
         k = self.key(x)
         q = self.query(x)
 
-        wei = q @ k.transpose(-2, -1) * k.shape[-1] ** -0.5
-        wei = wei.masked_fill(self.tril[:T, :T] == 0, float("-inf"))
+        wei = q @ k.transpose(-2, -1) * k.shape[-1]**-0.5
+        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
         wei = F.softmax(wei, dim=-1)
         wei = self.dropout(wei)
 
@@ -30,14 +27,11 @@ class Head(nn.Module):
         return wei @ v
 
 
+# Multi-head attention
 class MultiHeadAttention(nn.Module):
-    """Multiple heads of self-attention in parallel."""
-
     def __init__(self, n_embed, num_heads, head_size, block_size, dropout):
         super().__init__()
-        self.heads = nn.ModuleList(
-            [Head(n_embed, head_size, block_size, dropout) for _ in range(num_heads)]
-        )
+        self.heads = nn.ModuleList([Head(n_embed, head_size, block_size, dropout) for _ in range(num_heads)])
         self.proj = nn.Linear(num_heads * head_size, n_embed)
         self.dropout = nn.Dropout(dropout)
 
@@ -46,9 +40,8 @@ class MultiHeadAttention(nn.Module):
         return self.dropout(self.proj(out))
 
 
+# Feed-forward network
 class FeedForward(nn.Module):
-    """Position-wise feed-forward network."""
-
     def __init__(self, n_embed, dropout):
         super().__init__()
         self.net = nn.Sequential(
@@ -62,9 +55,8 @@ class FeedForward(nn.Module):
         return self.net(x)
 
 
+# Transformer block
 class Block(nn.Module):
-    """Pre-LayerNorm Transformer block: attention followed by feed-forward."""
-
     def __init__(self, n_embed, n_head, block_size, dropout):
         super().__init__()
         head_size = n_embed // n_head
@@ -79,22 +71,20 @@ class Block(nn.Module):
         return x
 
 
-class GPTLanguageModel(nn.Module):
-    def __init__(self, vocab_size, config):
+# Language model
+class BigramLanguageModel(nn.Module):
+    def __init__(self, vocab_size, n_embed, block_size, n_head, n_layer, dropout):
         super().__init__()
-        self.block_size = config.block_size
-        self.token_embedding_table = nn.Embedding(vocab_size, config.n_embed)
-        self.position_embedding_table = nn.Embedding(config.block_size, config.n_embed)
+        self.block_size = block_size
+        self.token_embedding_table = nn.Embedding(vocab_size, n_embed)
+        self.position_embedding_table = nn.Embedding(block_size, n_embed)
 
         self.blocks = nn.Sequential(
-            *[
-                Block(config.n_embed, config.n_head, config.block_size, config.dropout)
-                for _ in range(config.n_layer)
-            ],
-            nn.LayerNorm(config.n_embed),
+            *[Block(n_embed, n_head, block_size, dropout) for _ in range(n_layer)],
+            nn.LayerNorm(n_embed),
         )
 
-        self.lm_head = nn.Linear(config.n_embed, vocab_size)
+        self.lm_head = nn.Linear(n_embed, vocab_size)
 
     def forward(self, idx, targets=None):
         B, T = idx.shape

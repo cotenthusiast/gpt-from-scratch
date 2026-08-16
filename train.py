@@ -1,96 +1,79 @@
-"""Training loop for the char-level GPT on Tiny Shakespeare."""
-
 import argparse
-import time
-from dataclasses import asdict
-from pathlib import Path
 
 import torch
 
-from config import PRESETS
-from data import get_batch, load_data
-from model import GPTLanguageModel
+from data import load_data, get_batch
+from model import BigramLanguageModel
+
+torch.manual_seed(1337)
 
 
 @torch.no_grad()
-def estimate_loss(model, train_data, val_data, config, device):
+def estimate_loss(model, train_data, val_data, cfg):
     out = {}
     model.eval()
 
-    for split, data in [("train", train_data), ("val", val_data)]:
-        losses = torch.zeros(config.eval_iters)
-        for k in range(config.eval_iters):
-            X, Y = get_batch(data, config.block_size, config.batch_size, device)
+    for split in ['train', 'val']:
+        losses = torch.zeros(cfg.eval_iters)
+        for k in range(cfg.eval_iters):
+            X, Y = get_batch(split, train_data, val_data, cfg.block_size, cfg.batch_size, cfg.device)
             _, loss = model(X, Y)
             losses[k] = loss.item()
-        out[split] = losses.mean().item()
+        out[split] = losses.mean()
 
     model.train()
     return out
 
 
-def train(config, device, data_path, checkpoint_path, seed=1337):
-    torch.manual_seed(seed)
+def main():
+    parser = argparse.ArgumentParser(description='Train the GPT on Tiny Shakespeare.')
+    parser.add_argument('--a100', action='store_true', help='use the Kelvin2 A100 config instead of the tutorial config')
+    parser.add_argument('--checkpoint', default='checkpoints/shakespeare_gpt.pt')
+    args = parser.parse_args()
 
-    train_data, val_data, chars, vocab_size = load_data(data_path)
+    if args.a100:
+        import config_a100 as cfg
+    else:
+        import config as cfg
 
-    model = GPTLanguageModel(vocab_size, config).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
+    train_data, val_data, chars, vocab_size, encode, decode = load_data()
 
-    n_params = sum(p.numel() for p in model.parameters())
-    print(f"{n_params / 1e6:.2f}M parameters")
-    print(f"Training on {device} with preset '{config.name}'")
+    model = BigramLanguageModel(vocab_size, cfg.n_embed, cfg.block_size, cfg.n_head, cfg.n_layer, cfg.dropout)
+    model = model.to(cfg.device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.learning_rate)
 
-    losses = {"train": float("nan"), "val": float("nan")}
-    start = time.time()
-    for it in range(config.max_iters):
-        if it % config.eval_interval == 0 or it == config.max_iters - 1:
-            losses = estimate_loss(model, train_data, val_data, config, device)
-            elapsed = time.time() - start
-            print(
-                f"step {it}: train loss {losses['train']:.4f}, "
-                f"val loss {losses['val']:.4f} ({elapsed:.0f}s)"
-            )
+    print(f"{sum(p.numel() for p in model.parameters()) / 1e6:.2f}M parameters")
+    print(f"Training on {cfg.device}")
 
-        xb, yb = get_batch(train_data, config.block_size, config.batch_size, device)
+    for iter in range(cfg.max_iters):
+        if iter % cfg.eval_interval == 0 or iter == cfg.max_iters - 1:
+            losses = estimate_loss(model, train_data, val_data, cfg)
+            print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+
+        xb, yb = get_batch('train', train_data, val_data, cfg.block_size, cfg.batch_size, cfg.device)
         _, loss = model(xb, yb)
 
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
 
-    checkpoint_path = Path(checkpoint_path)
-    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(
-        {
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "iteration": config.max_iters,
-            "config": asdict(config),
-            "chars": chars,
-            "train_loss": losses["train"],
-            "val_loss": losses["val"],
-        },
-        checkpoint_path,
-    )
-    print(f"Saved checkpoint to {checkpoint_path}")
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'iter': cfg.max_iters,
+        'vocab_size': vocab_size,
+        'chars': chars,
+        'n_embed': cfg.n_embed,
+        'block_size': cfg.block_size,
+        'n_head': cfg.n_head,
+        'n_layer': cfg.n_layer,
+        'dropout': cfg.dropout,
+    }, args.checkpoint)
+    print(f"Saved checkpoint to {args.checkpoint}")
 
-    return model, chars
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Train a char-level GPT on Tiny Shakespeare.")
-    parser.add_argument("--preset", choices=PRESETS.keys(), default="tutorial")
-    parser.add_argument("--data", default="input.txt")
-    parser.add_argument("--checkpoint", default="checkpoints/shakespeare_gpt.pt")
-    parser.add_argument("--seed", type=int, default=1337)
-    args = parser.parse_args()
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    config = PRESETS[args.preset]
-
-    train(config, device, args.data, args.checkpoint, seed=args.seed)
+    context = torch.zeros((1, 1), dtype=torch.long, device=cfg.device)
+    print(decode(model.generate(context, max_new_tokens=500)[0].tolist()))
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
