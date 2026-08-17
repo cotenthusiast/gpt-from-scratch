@@ -2,70 +2,45 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-
-# Single attention head
-class Head(nn.Module):
-    def __init__(self, n_embed, head_size, block_size, dropout):
-        super().__init__()
-        self.key = nn.Linear(n_embed, head_size, bias=False)
-        self.query = nn.Linear(n_embed, head_size, bias=False)
-        self.value = nn.Linear(n_embed, head_size, bias=False)
-        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x):
-        B, T, C = x.shape
-        k = self.key(x)
-        q = self.query(x)
-
-        wei = q @ k.transpose(-2, -1) * k.shape[-1]**-0.5
-        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
-        wei = F.softmax(wei, dim=-1)
-        wei = self.dropout(wei)
-
-        v = self.value(x)
-        return wei @ v
-
-
+# Vectorized Multi-head attention 
 class MultiHeadAttention(nn.Module):
     def __init__(self, n_embed, num_heads, head_size, block_size, dropout):
-        self.n_embed = n_embed
+        super().__init__()
         self.num_heads = num_heads
         self.head_size = head_size
-        self.block_size = block_size
+        self.keys = nn.Linear(n_embed,num_heads*head_size, bias=False)
+        self.queries = nn.Linear(n_embed,num_heads*head_size, bias=False)
+        self.values = nn.Linear(n_embed,num_heads*head_size, bias=False)
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
         self.proj = nn.Linear(num_heads * head_size, n_embed)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-            B, T, C = x.shape # B = batch size, T = sequence length, C = embedding dimension
-            H = self.num_heads # number of heads
-            k = self.key(x)
-            q = self.query(x)
-    
-            wei = q @ k.transpose(-2, -1) * k.shape[-1]**-0.5
-            wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
-            wei = F.softmax(wei, dim=-1)
-            wei = self.dropout(wei)
-    
-            v = self.value(x)
-            return wei @ v
 
+        B, T, C = x.shape
+        H = self.num_heads
+        D = self.head_size
 
+        k = self.keys(x) # B, T, C
+        q = self.queries(x) 
+        v = self.values(x) 
 
+        k = k.reshape(B, T, H, D).transpose(1, 2) # B, T, C  --->  B, T, H, D  --->  B, H, T, D
+        q = q.reshape(B, T, H, D).transpose(1, 2)
+        v = v.reshape(B, T, H, D).transpose(1, 2)
 
-# Multi-head attention
-class MultiHeadAttention(nn.Module):
-    def __init__(self, n_embed, num_heads, head_size, block_size, dropout):
-        super().__init__()
-        self.heads = nn.ModuleList([Head(n_embed, head_size, block_size, dropout) for _ in range(num_heads)])
-        self.proj = nn.Linear(num_heads * head_size, n_embed)
-        self.dropout = nn.Dropout(dropout)
+        wei = q @ k.transpose(-2, -1) * k.shape[-1]**-0.5 # B, H, T, D  @  (B, H, T, D).H  --->  B, H, T, T
+        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf')) # B, H, T, T
+        wei = F.softmax(wei, dim=-1) # B, H, T, T
+        wei = self.dropout(wei) # B, H, T, T
 
-    def forward(self, x):
-        out = torch.cat([h(x) for h in self.heads], dim=-1)
-        return self.dropout(self.proj(out))
+        out = wei @ v # B, H, T, T  @  B, H, T, D  --->  B, H, T, D
 
+        return self.dropout(
+            self.proj(
+                (out.transpose(1, 2)).reshape(B, T, C) # Switching H and T, reshaping the matrix from B, T, H, D to B, T, C, carrying out the learned projection transformation then doing dropout
+                )
+            )
 
 # Feed-forward network
 class FeedForward(nn.Module):
