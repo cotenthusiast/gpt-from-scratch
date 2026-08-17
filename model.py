@@ -27,6 +27,33 @@ class Head(nn.Module):
         return wei @ v
 
 
+class MultiHeadAttention(nn.Module):
+    def __init__(self, n_embed, num_heads, head_size, block_size, dropout):
+        self.n_embed = n_embed
+        self.num_heads = num_heads
+        self.head_size = head_size
+        self.block_size = block_size
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+        self.proj = nn.Linear(num_heads * head_size, n_embed)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+            B, T, C = x.shape # B = batch size, T = sequence length, C = embedding dimension
+            H = self.num_heads # number of heads
+            k = self.key(x)
+            q = self.query(x)
+    
+            wei = q @ k.transpose(-2, -1) * k.shape[-1]**-0.5
+            wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
+            wei = F.softmax(wei, dim=-1)
+            wei = self.dropout(wei)
+    
+            v = self.value(x)
+            return wei @ v
+
+
+
+
 # Multi-head attention
 class MultiHeadAttention(nn.Module):
     def __init__(self, n_embed, num_heads, head_size, block_size, dropout):
